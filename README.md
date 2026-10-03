@@ -1,6 +1,6 @@
 # Images Guard
 
-A Go API that accepts a WebP image, returns its ID, and assesses it asynchronously with a local **Qwen3-VL-2B-Thinking** model through an OpenAI-compatible endpoint.
+A Go API that accepts a WebP image, returns its ID, and assesses it asynchronously with a local **Qwen3-VL-2B-Thinking** model through the **llama.cpp server HTTP API**. No model API key is needed. Application settings use YAML; model inference settings are fixed.
 
 Uses Gin, Zap, Viper, PostgreSQL, GORM, local filesystem storage, and Docker. Schema changes are explicit SQL migrations; the application never invokes GORM AutoMigrate.
 
@@ -24,28 +24,26 @@ The API listens at `http://127.0.0.1:8080`. Compose stores PostgreSQL and image 
 
 The model server is configured separately because GPU/CPU and inference runtime requirements vary. Compose reaches a host server through `host.docker.internal`; that server must listen on an interface reachable from the Docker bridge.
 
-## Local model
+## llama.cpp server
 
-For vLLM on compatible hardware, an example launch configuration is:
+Run a recent `llama-server` with the Qwen3-VL-2B-Thinking GGUF and its matching multimodal projector. For example, using files you have already downloaded:
 
 ```sh
-vllm serve Qwen/Qwen3-VL-2B-Thinking \
+llama-server \
+  --model /path/to/Qwen3-VL-2B-Thinking.gguf \
+  --mmproj /path/to/mmproj.gguf \
   --host 0.0.0.0 --port 8000 \
-  --reasoning-parser qwen3 \
-  --max-model-len 32768 \
-  --max-num-seqs 1 \
-  --limit-mm-per-prompt '{"image": 1, "video": 0}'
+  --ctx-size 32768 --parallel 1 --jinja \
+  --alias Qwen/Qwen3-VL-2B-Thinking
 ```
 
-Use a vLLM release supporting this checkpoint and reasoning parser. Reasoning must be emitted in a separate server field, with the final JSON in `choices[0].message.content`. Structured constraints must apply to the final answer while preserving thinking. The client requests `chat_template_kwargs.enable_thinking=true` and Qwen's suggested thinking sampling settings (temperature 0.6, top-p 0.95, top-k 20).
+The application only calls this server's `/v1/chat/completions` API; it does not load model files or launch an inference runtime. The default API base URL is `http://127.0.0.1:8000/v1`; Compose uses `http://host.docker.internal:8000/v1`. Set `GUARD_MODEL_BASE_URL` to change the address. Run the server without API-key authentication; requests contain no authorization header or dummy key.
 
-For Ollama, set `GUARD_MODEL_BACKEND=ollama`, `GUARD_MODEL_BASE_URL=http://host.docker.internal:11434/v1`, and `GUARD_MODEL_NAME` to your installed **thinking** tag. The adapter requests `reasoning_effort=high`. Confirm the selected tag/server supports thinking, vision, and the configured response format together.
+Requests enable thinking, separate it with `reasoning_format=deepseek`, and constrain the final answer with a JSON schema. Sampling is fixed at temperature 0.6, top-p 0.95, top-k 20, and min-p 0. The server's `reasoning_content` is ignored; only `choices[0].message.content` is assessed. WebP uploads are converted losslessly to PNG for the server's image decoder, preserving dimensions and decoded pixels. Storage retains the original WebP.
 
-`json_schema` is the default response format. If your server supports only JSON mode, explicitly set `GUARD_MODEL_RESPONSE_FORMAT=json_object`. Go validates the same contract in both modes. There is no automatic format fallback, reasoning removal, JSON repair, or fallback to a hosted OpenAI model. Mixed reasoning/JSON, missing fields, duplicate keys, extra fields, refusals, and token-truncated outputs are rejected.
+Go rejects mixed reasoning/JSON, missing fields, duplicate keys, extra fields, refusals, and token-truncated outputs. There is no automatic JSON repair or backend fallback. Generation is limited to 8192 tokens including thinking, with a 120-second processing timeout and a 150-second worker lease.
 
-The 8192-token generation limit includes thinking. Adjust `model.max_tokens`, `model.timeout`, `worker.lease_duration`, and the server context size for your hardware and policy length. The lease must exceed the processing timeout by at least 15 seconds.
-
-References: [Qwen deployment](https://github.com/QwenLM/Qwen3-VL#deployment), [vLLM reasoning](https://docs.vllm.ai/en/latest/features/reasoning_outputs/), [vLLM structured outputs](https://docs.vllm.ai/en/latest/features/structured_outputs/), [Ollama compatibility](https://docs.ollama.com/api/openai-compatibility).
+Reference: [llama.cpp server API and multimodal support](https://github.com/ggml-org/llama.cpp/blob/master/tools/server/README.md).
 
 ## API
 
@@ -108,7 +106,7 @@ Health endpoints: `GET /health/live` and `GET /health/ready`. Readiness checks P
 - Long side ≤1920 and short side ≤1080, including portrait orientation; configurable limits can be reduced.
 - Whole-request cap: file limit +64 KiB for multipart framing.
 - Actual RIFF/WebP contents, container lengths, animation markers, dimensions, and full decoding are checked. Filename and claimed MIME type do not establish the format.
-- Rejected uploads do not create an image record. Valid images are assessed without resizing.
+- Rejected uploads do not create an image record. Valid images are assessed without resizing; the inference adapter converts WebP to PNG.
 
 ## Policy and configuration
 
@@ -123,14 +121,16 @@ IDs must be uppercase letters, digits, and underscores, starting with a letter. 
 
 Restart after changing policy. Each accepted upload saves the policy text/hash and model name, so retries and crash recovery retain that job's policy. Existing jobs do not adopt a new policy.
 
-`config/config.yaml` supplies defaults. Environment variables override settings using `GUARD_` plus the uppercase dotted key with underscores: for example, `model.base_url` → `GUARD_MODEL_BASE_URL`. `GUARD_DATABASE_DSN` is required. `-config /path/to/config.yaml` selects another file; file paths inside it are relative to the process working directory. Unknown configuration keys and invalid limits fail startup.
+`config/config.yaml` configures the server, upload limits, storage, database, workers, policy path, and logging. Environment variables override these settings using `GUARD_` plus the uppercase dotted key with underscores: for example, `upload.max_bytes` → `GUARD_UPLOAD_MAX_BYTES`. `GUARD_DATABASE_DSN` is required unless `database.dsn` is set in YAML. Use `-config /path/to/config.yaml` to select another file; paths inside it are relative to the process working directory. Unknown keys and invalid limits fail startup.
+
+There is no `model` section in YAML. The application only calls the llama.cpp API, with fixed model name, response format, timeout, token limit, and sampling settings. `GUARD_MODEL_BASE_URL` selects the API address and defaults to `http://127.0.0.1:8000/v1`. No API key is used. The server loads Qwen3-VL-2B-Thinking; use the alias shown above.
 
 ## Architecture and recovery
 
 ```text
 HTTP adapter ──► core service ──► repository and storage ports
 Worker adapter ► core processor ► repository, storage and model ports
-                             ◄── PostgreSQL/GORM, filesystem, OpenAI adapters
+                             ◄── PostgreSQL/GORM, filesystem, llama.cpp HTTP adapters
 ```
 
 The core has no framework dependencies. `cmd/guard` owns construction and shutdown. GORM records and API/model JSON formats belong to adapters.
@@ -163,4 +163,4 @@ PostgreSQL integration checks are opt-in:
 GUARD_TEST_DATABASE_DSN='postgres://guard:password@127.0.0.1:5432/guard?sslmode=disable' go test ./internal/adapters/postgres -v
 ```
 
-Integration checks create and remove their own uniquely named schema. They cover migration reversibility, asynchronous upload/status, invalid model output, concurrent claims, expired leases, and stale result fencing. Model requests in checks use an HTTP stub; assessing real model quality and runtime compatibility requires your running Qwen endpoint.
+Integration checks create and remove their own uniquely named schema. They cover migration reversibility, asynchronous upload/status, invalid model output, concurrent claims, expired leases, and stale result fencing. Model requests in checks use an HTTP stub; assessing real model quality and runtime compatibility requires your running llama.cpp server.

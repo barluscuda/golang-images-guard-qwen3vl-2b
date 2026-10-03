@@ -13,7 +13,7 @@ import (
 	"time"
 
 	httpapi "github.com/barluscuda/golang-images-guard-qwen3vl-2b/internal/adapters/http"
-	modelapi "github.com/barluscuda/golang-images-guard-qwen3vl-2b/internal/adapters/openai"
+	modelapi "github.com/barluscuda/golang-images-guard-qwen3vl-2b/internal/adapters/llamacpp"
 	"github.com/barluscuda/golang-images-guard-qwen3vl-2b/internal/adapters/postgres"
 	"github.com/barluscuda/golang-images-guard-qwen3vl-2b/internal/adapters/storage"
 	"github.com/barluscuda/golang-images-guard-qwen3vl-2b/internal/adapters/worker"
@@ -58,8 +58,7 @@ func run(path string) error {
 		return fmt.Errorf("open storage: %w", err)
 	}
 	defer store.Close()
-	model := modelapi.New(modelapi.Options{BaseURL: cfg.Model.BaseURL, APIKey: cfg.Model.APIKey,
-		Backend: cfg.Model.Backend, ResponseFormat: cfg.Model.ResponseFormat, Timeout: cfg.Model.Timeout,
+	model := modelapi.New(modelapi.Options{BaseURL: cfg.Model.BaseURL, Timeout: cfg.Model.Timeout,
 		MaxTokens: cfg.Model.MaxTokens, MaxResponseBytes: cfg.Model.MaxResponseBytes,
 		Temperature: cfg.Model.Temperature, TopP: cfg.Model.TopP, Concurrency: cfg.Worker.Concurrency})
 	defer model.Close()

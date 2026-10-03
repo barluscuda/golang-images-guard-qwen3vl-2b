@@ -3,7 +3,6 @@ package config
 import (
 	"fmt"
 	"io"
-	"math"
 	"net/url"
 	"os"
 	"strings"
@@ -32,17 +31,13 @@ type Config struct {
 		MaxOpen int `mapstructure:"max_open"`
 		MaxIdle int `mapstructure:"max_idle"`
 	} `mapstructure:"database"`
+	// Model settings are fixed for the llama.cpp API and excluded from YAML.
 	Model struct {
-		BaseURL          string `mapstructure:"base_url"`
-		APIKey           string `mapstructure:"api_key"`
-		Name, Backend    string
-		ResponseFormat   string `mapstructure:"response_format"`
-		Timeout          time.Duration
-		MaxTokens        int64 `mapstructure:"max_tokens"`
-		MaxResponseBytes int64 `mapstructure:"max_response_bytes"`
-		Temperature      float64
-		TopP             float64 `mapstructure:"top_p"`
-	} `mapstructure:"model"`
+		BaseURL, Name               string
+		Timeout                     time.Duration
+		MaxTokens, MaxResponseBytes int64
+		Temperature, TopP           float64
+	} `mapstructure:"-"`
 	Worker struct {
 		Concurrency   int
 		PollInterval  time.Duration `mapstructure:"poll_interval"`
@@ -62,9 +57,6 @@ func Load(path string) (Config, core.Policy, error) {
 		"server.address": ":8080", "server.read_timeout": "15s", "server.write_timeout": "30s", "server.shutdown_timeout": "15s",
 		"upload.max_bytes": 5 << 20, "upload.max_long_side": 1920, "upload.max_short_side": 1080, "upload.max_concurrent": 4,
 		"storage.directory": "data/images", "database.dsn": "", "database.max_open": 10, "database.max_idle": 5,
-		"model.base_url": "http://127.0.0.1:8000/v1", "model.api_key": "local", "model.name": "Qwen/Qwen3-VL-2B-Thinking",
-		"model.backend": "vllm", "model.response_format": "json_schema", "model.timeout": "120s", "model.max_tokens": 8192,
-		"model.max_response_bytes": 1 << 20, "model.temperature": 0.6, "model.top_p": 0.95,
 		"worker.concurrency": 1, "worker.poll_interval": "1s", "worker.lease_duration": "150s",
 		"worker.max_attempts": 3, "worker.retry_delay": "5s", "policy.path": "config/policy.txt", "log.level": "info",
 	}
@@ -82,6 +74,16 @@ func Load(path string) (Config, core.Policy, error) {
 	if err := v.UnmarshalExact(&cfg); err != nil {
 		return cfg, core.Policy{}, fmt.Errorf("decode config: %w", err)
 	}
+	cfg.Model.BaseURL = "http://127.0.0.1:8000/v1"
+	if endpoint, ok := os.LookupEnv("GUARD_MODEL_BASE_URL"); ok {
+		cfg.Model.BaseURL = endpoint
+	}
+	cfg.Model.Name = "Qwen/Qwen3-VL-2B-Thinking"
+	cfg.Model.Timeout = 120 * time.Second
+	cfg.Model.MaxTokens = 8192
+	cfg.Model.MaxResponseBytes = 1 << 20
+	cfg.Model.Temperature = 0.6
+	cfg.Model.TopP = 0.95
 	if err := cfg.Validate(); err != nil {
 		return cfg, core.Policy{}, err
 	}
@@ -122,16 +124,7 @@ func (c Config) Validate() error {
 	}
 	u, err := url.Parse(c.Model.BaseURL)
 	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" {
-		return fmt.Errorf("model.base_url must be an HTTP(S) endpoint without credentials, query or fragment")
-	}
-	if strings.TrimSpace(c.Model.Name) == "" || (c.Model.Backend != "vllm" && c.Model.Backend != "ollama") {
-		return fmt.Errorf("model name is required and backend must be vllm or ollama")
-	}
-	if c.Model.ResponseFormat != "json_schema" && c.Model.ResponseFormat != "json_object" {
-		return fmt.Errorf("model.response_format must be json_schema or json_object")
-	}
-	if math.IsNaN(c.Model.Temperature) || c.Model.Temperature <= 0 || c.Model.Temperature > 2 || math.IsNaN(c.Model.TopP) || c.Model.TopP <= 0 || c.Model.TopP > 1 {
-		return fmt.Errorf("invalid model sampling settings")
+		return fmt.Errorf("GUARD_MODEL_BASE_URL must be an HTTP(S) endpoint without credentials, query or fragment")
 	}
 	return nil
 }

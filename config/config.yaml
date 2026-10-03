@@ -18,18 +18,6 @@ database:
   max_open: 10
   max_idle: 5
 
-model:
-  base_url: http://127.0.0.1:8000/v1
-  api_key: local
-  name: Qwen/Qwen3-VL-2B-Thinking
-  backend: vllm # vllm or ollama; select the thinking checkpoint/tag
-  response_format: json_schema # json_object only if your server lacks schema support
-  timeout: 120s
-  max_tokens: 8192 # Includes internal thinking; exhaustion produces a failed assessment
-  max_response_bytes: 1048576
-  temperature: 0.6
-  top_p: 0.95
-
 worker:
   concurrency: 1
   poll_interval: 1s

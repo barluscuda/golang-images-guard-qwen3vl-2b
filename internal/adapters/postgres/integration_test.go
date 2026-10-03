@@ -18,7 +18,7 @@ import (
 	"time"
 
 	httpapi "github.com/barluscuda/golang-images-guard-qwen3vl-2b/internal/adapters/http"
-	modelapi "github.com/barluscuda/golang-images-guard-qwen3vl-2b/internal/adapters/openai"
+	modelapi "github.com/barluscuda/golang-images-guard-qwen3vl-2b/internal/adapters/llamacpp"
 	"github.com/barluscuda/golang-images-guard-qwen3vl-2b/internal/adapters/storage"
 	"github.com/barluscuda/golang-images-guard-qwen3vl-2b/internal/core"
 	"github.com/gin-gonic/gin"
@@ -223,17 +223,17 @@ func TestPostgresWorkflow(t *testing.T) {
 				t.Error("schema missing")
 			}
 			encoded, _ := json.Marshal(request["messages"])
-			if !bytes.Contains(encoded, []byte("original-policy-snapshot")) || !bytes.Contains(encoded, []byte("data:image/webp;base64,")) {
+			if !bytes.Contains(encoded, []byte("original-policy-snapshot")) || !bytes.Contains(encoded, []byte("data:image/png;base64,")) {
 				t.Error("image or saved policy missing")
 			}
 			sawRequest.Store(true)
 			w.Header().Set("Content-Type", "application/json")
 			_ = json.NewEncoder(w).Encode(map[string]any{"choices": []any{map[string]any{"index": 0, "finish_reason": "stop", "message": map[string]any{
-				"role": "assistant", "reasoning": "private thinking", "content": `{"violation":false,"severity":0,"rule":null,"reason":"No violation."}`,
+				"role": "assistant", "reasoning_content": "private thinking", "content": `{"violation":false,"severity":0,"rule":null,"reason":"No violation."}`,
 			}}}})
 		}))
 		defer stub.Close()
-		model := modelapi.New(modelapi.Options{BaseURL: stub.URL + "/v1", Backend: "vllm", ResponseFormat: "json_schema", Timeout: 3 * time.Second, MaxTokens: 8192, MaxResponseBytes: 1024, Temperature: 0.6, TopP: 0.95, Concurrency: 1})
+		model := modelapi.New(modelapi.Options{BaseURL: stub.URL + "/v1", Timeout: 3 * time.Second, MaxTokens: 8192, MaxResponseBytes: 1024, Temperature: 0.6, TopP: 0.95, Concurrency: 1})
 		defer model.Close()
 		processor := core.NewProcessor(repo, store, model, time.Minute, 3*time.Second, time.Millisecond, 2)
 		if worked, err := processor.ProcessNext(ctx); err != nil || !worked {
@@ -264,7 +264,7 @@ func TestPostgresWorkflow(t *testing.T) {
 			_, _ = io.WriteString(w, `{"choices":[{"index":0,"finish_reason":"stop","message":{"role":"assistant","content":"not JSON"}}]}`)
 		}))
 		defer stub.Close()
-		model := modelapi.New(modelapi.Options{BaseURL: stub.URL + "/v1", Backend: "vllm", ResponseFormat: "json_schema", Timeout: 3 * time.Second, MaxTokens: 8192, MaxResponseBytes: 1024, Temperature: 0.6, TopP: 0.95, Concurrency: 1})
+		model := modelapi.New(modelapi.Options{BaseURL: stub.URL + "/v1", Timeout: 3 * time.Second, MaxTokens: 8192, MaxResponseBytes: 1024, Temperature: 0.6, TopP: 0.95, Concurrency: 1})
 		defer model.Close()
 		processor := core.NewProcessor(repo, store, model, time.Minute, 3*time.Second, 0, 2)
 		for i := 0; i < 2; i++ {
