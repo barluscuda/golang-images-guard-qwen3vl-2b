@@ -1,0 +1,8 @@
+Assess the uploaded image using only the rules declared below.
+Report the most severe applicable rule. Do not infer violations from unsupported assumptions.
+If no rule applies, return violation=false, severity=0, rule=null and a short reason.
+
+RULE SEXUAL_CONTENT | Sexual Content
+Prohibit visible explicit sexual activity and explicit displays of sexual anatomy.
+Do not classify ordinary clothing, swimwear, non-explicit affection, or non-explicit medical illustrations as violations.
+Use severity 1–3 for minor violations, 4–6 for moderate violations, 7–9 for severe violations, and 10 for extreme violations.

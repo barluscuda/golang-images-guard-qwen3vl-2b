@@ -1,0 +1,44 @@
+server:
+  address: ":8080"
+  read_timeout: 15s
+  write_timeout: 30s
+  shutdown_timeout: 15s
+
+upload:
+  max_bytes: 5242880 # 5 MiB; whole-request cap adds 64 KiB multipart overhead
+  max_long_side: 1920
+  max_short_side: 1080
+  max_concurrent: 4
+
+storage:
+  directory: data/images
+
+database:
+  dsn: "" # Required: GUARD_DATABASE_DSN
+  max_open: 10
+  max_idle: 5
+
+model:
+  base_url: http://127.0.0.1:8000/v1
+  api_key: local
+  name: Qwen/Qwen3-VL-2B-Thinking
+  backend: vllm # vllm or ollama; select the thinking checkpoint/tag
+  response_format: json_schema # json_object only if your server lacks schema support
+  timeout: 120s
+  max_tokens: 8192 # Includes internal thinking; exhaustion produces a failed assessment
+  max_response_bytes: 1048576
+  temperature: 0.6
+  top_p: 0.95
+
+worker:
+  concurrency: 1
+  poll_interval: 1s
+  lease_duration: 150s
+  max_attempts: 3
+  retry_delay: 5s
+
+policy:
+  path: config/policy.txt
+
+log:
+  level: info

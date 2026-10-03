@@ -1,0 +1,5 @@
+/bin/
+/data/
+.env
+*.test
+coverage.out

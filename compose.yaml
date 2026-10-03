@@ -1,0 +1,55 @@
+services:
+  postgres:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_DB: guard
+      POSTGRES_USER: guard
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+    volumes:
+      - postgres_data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U guard -d guard"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  migrate:
+    image: migrate/migrate:v4.19.1
+    profiles: ["tools"]
+    volumes:
+      - ./migrations:/migrations:ro
+    environment:
+      GUARD_DATABASE_DSN: ${GUARD_DATABASE_DSN:?Set GUARD_DATABASE_DSN in .env}
+    entrypoint: ["/bin/sh", "-c"]
+    command: ['exec migrate -path=/migrations -database="$$GUARD_DATABASE_DSN" up']
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  guard:
+    build: .
+    environment:
+      GUARD_DATABASE_DSN: ${GUARD_DATABASE_DSN:?Set GUARD_DATABASE_DSN in .env}
+      GUARD_STORAGE_DIRECTORY: /data/images
+      GUARD_MODEL_BASE_URL: ${GUARD_MODEL_BASE_URL:-http://host.docker.internal:8000/v1}
+      GUARD_MODEL_NAME: ${GUARD_MODEL_NAME:-Qwen/Qwen3-VL-2B-Thinking}
+      GUARD_MODEL_BACKEND: ${GUARD_MODEL_BACKEND:-vllm}
+      GUARD_MODEL_API_KEY: ${GUARD_MODEL_API_KEY:-local}
+      GUARD_MODEL_RESPONSE_FORMAT: ${GUARD_MODEL_RESPONSE_FORMAT:-json_schema}
+    ports:
+      - "127.0.0.1:8080:8080"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - image_data:/data/images
+      - ./config:/app/config:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+    stop_grace_period: 25s
+
+volumes:
+  postgres_data:
+  image_data:
