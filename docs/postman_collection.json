@@ -1,0 +1,138 @@
+{
+  "info": {
+    "name": "Images Guard API",
+    "description": "Requests for the Images Guard API. Set base_url to the API address. For Upload Image, attach one static WebP file in the image form-data field. Copy the returned image_id into the image_id collection variable to poll or delete that image. Upload limits default to 5 MiB, 1920 px on the long side, and 1080 px on the short side; server configuration may lower or raise the byte limit up to 64 MiB.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://127.0.0.1:8080",
+      "type": "string"
+    },
+    {
+      "key": "image_id",
+      "value": "",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "Images",
+      "item": [
+        {
+          "name": "Upload Image",
+          "description": "Uploads exactly one static WebP file as multipart form-data field `image`. The API validates the actual bytes, regardless of the filename or claimed media type. Returns 202 Accepted with image_id and a Location header. Error codes: invalid_upload or invalid_image (400), image_too_large or request_too_large (413), unsupported_image (415), invalid_dimensions (422), busy or upload_failed (503).",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "image",
+                  "type": "file",
+                  "src": ""
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{base_url}}/v1/images",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "v1",
+                "images"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Image Status",
+          "description": "Polls the image job. Status is pending, processing, completed, or failed. Completed jobs include result; failed jobs include error. Pending and processing jobs return both as null. Responses include Cache-Control: no-store. Error codes: invalid_id (400), not_found (404), database_unavailable (503).",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/v1/images/{{image_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "v1",
+                "images",
+                "{{image_id}}"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Delete Image",
+          "description": "Deletes the image record and stored file only when status is completed. Pending, processing, and failed images return 409. Success returns 204 No Content. Error codes: invalid_id (400), not_found (404), not_processed (409), delete_failed (503).",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/v1/images/{{image_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "v1",
+                "images",
+                "{{image_id}}"
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Health",
+      "item": [
+        {
+          "name": "Liveness",
+          "description": "Checks whether the API process is responding. Returns {\"status\":\"ok\"} when healthy.",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/health/live",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "health",
+                "live"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Readiness",
+          "description": "Checks PostgreSQL availability; it does not check the model server. Returns {\"status\":\"ok\"} when ready, or a not_ready error with status 503.",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/health/ready",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "health",
+                "ready"
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
+    }
+  ]
+}

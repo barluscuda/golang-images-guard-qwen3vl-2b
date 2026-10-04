@@ -47,6 +47,8 @@ Reference: [llama.cpp server API and multimodal support](https://github.com/ggml
 
 ## API
 
+The Postman collection is available at [docs/postman_collection.json](docs/postman_collection.json).
+
 Upload exactly one multipart file field named `image`:
 
 ```sh
