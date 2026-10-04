@@ -7,7 +7,8 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/barluscuda/golang-images-guard-qwen3vl-2b/internal/core"
+	"github.com/barluscuda/golang-images-guard-qwen3vl-2b/internal/domain"
+	"github.com/barluscuda/golang-images-guard-qwen3vl-2b/internal/service"
 	"github.com/gin-gonic/gin"
 )
 
@@ -17,12 +18,12 @@ type UploadLimits struct {
 }
 
 type Handler struct {
-	service *core.Service
+	service *service.Guard
 	limits  UploadLimits
 	uploads chan struct{}
 }
 
-func NewHandler(service *core.Service, limits UploadLimits) *Handler {
+func NewHandler(service *service.Guard, limits UploadLimits) *Handler {
 	return &Handler{service: service, limits: limits, uploads: make(chan struct{}, limits.MaxConcurrent)}
 }
 
@@ -102,14 +103,14 @@ func (h *Handler) Upload(c *gin.Context) {
 
 func (h *Handler) Get(c *gin.Context) {
 	id := c.Param("image_id")
-	if !core.ValidID(id) {
+	if !domain.ValidID(id) {
 		respondError(c, http.StatusBadRequest, "invalid_id", "Image ID must be a lowercase UUID.")
 		return
 	}
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 5*time.Second)
 	defer cancel()
 	image, err := h.service.Get(ctx, id)
-	if errors.Is(err, core.ErrNotFound) {
+	if errors.Is(err, domain.ErrNotFound) {
 		respondError(c, http.StatusNotFound, "not_found", "Image not found.")
 		return
 	}
@@ -149,7 +150,7 @@ type errorResponse struct {
 }
 type imageResponse struct {
 	ID        string              `json:"image_id"`
-	Status    core.Status         `json:"status"`
+	Status    domain.Status       `json:"status"`
 	SizeBytes int64               `json:"size_bytes"`
 	Width     int                 `json:"width"`
 	Height    int                 `json:"height"`

@@ -1,4 +1,4 @@
-package postgres
+package repository
 
 import (
 	"bytes"
@@ -17,10 +17,12 @@ import (
 	"testing"
 	"time"
 
-	httpapi "github.com/barluscuda/golang-images-guard-qwen3vl-2b/internal/adapters/http"
-	modelapi "github.com/barluscuda/golang-images-guard-qwen3vl-2b/internal/adapters/llamacpp"
-	"github.com/barluscuda/golang-images-guard-qwen3vl-2b/internal/adapters/storage"
-	"github.com/barluscuda/golang-images-guard-qwen3vl-2b/internal/core"
+	httpapi "github.com/barluscuda/golang-images-guard-qwen3vl-2b/internal/adapter/http"
+	modelapi "github.com/barluscuda/golang-images-guard-qwen3vl-2b/internal/adapter/llamacpp"
+	"github.com/barluscuda/golang-images-guard-qwen3vl-2b/internal/adapter/postgres"
+	"github.com/barluscuda/golang-images-guard-qwen3vl-2b/internal/adapter/storage"
+	"github.com/barluscuda/golang-images-guard-qwen3vl-2b/internal/domain"
+	"github.com/barluscuda/golang-images-guard-qwen3vl-2b/internal/service"
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
 	pgdriver "gorm.io/driver/postgres"
@@ -28,7 +30,7 @@ import (
 	"gorm.io/gorm/logger"
 )
 
-func integrationRepository(t *testing.T) *Repository {
+func integrationRepository(t *testing.T) (*Image, *postgres.Client) {
 	t.Helper()
 	dsn := os.Getenv("GUARD_TEST_DATABASE_DSN")
 	if dsn == "" {
@@ -38,7 +40,7 @@ func integrationRepository(t *testing.T) *Repository {
 	if err != nil || (u.Scheme != "postgres" && u.Scheme != "postgresql") {
 		t.Fatal("integration DSN must be a PostgreSQL URI")
 	}
-	id, err := core.NewID()
+	id, err := domain.NewID()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -66,8 +68,8 @@ func integrationRepository(t *testing.T) *Repository {
 	u.RawQuery = query.Encode()
 	scopedDSN := u.String()
 	// Startup must fail for an empty schema without creating any tables.
-	if r, err := Open(ctx, scopedDSN, 4, 2); err == nil {
-		_ = r.Close()
+	if client, err := postgres.Open(ctx, scopedDSN, 4, 2); err == nil {
+		_ = client.Close()
 		t.Fatal("opened an unmigrated schema")
 	}
 	var tables int64
@@ -79,11 +81,11 @@ func integrationRepository(t *testing.T) *Repository {
 		t.Fatal(err)
 	}
 	defer func() { db, _ := scoped.DB(); _ = db.Close() }()
-	up, err := os.ReadFile("../../../migrations/000001_create_images.up.sql")
+	up, err := os.ReadFile("../../migrations/000001_create_images.up.sql")
 	if err != nil {
 		t.Fatal(err)
 	}
-	down, err := os.ReadFile("../../../migrations/000001_create_images.down.sql")
+	down, err := os.ReadFile("../../migrations/000001_create_images.down.sql")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -95,23 +97,23 @@ func integrationRepository(t *testing.T) *Repository {
 	if err := scoped.WithContext(ctx).Exec("CREATE TABLE schema_migrations (version bigint PRIMARY KEY, dirty boolean NOT NULL); INSERT INTO schema_migrations VALUES (1, false)").Error; err != nil {
 		t.Fatal(err)
 	}
-	repo, err := Open(ctx, scopedDSN, 10, 5)
+	client, err := postgres.Open(ctx, scopedDSN, 10, 5)
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = repo.Close() })
-	return repo
+	t.Cleanup(func() { _ = client.Close() })
+	return NewImage(client.DB()), client
 }
 
 func TestPostgresWorkflow(t *testing.T) {
-	repo := integrationRepository(t)
+	repo, client := integrationRepository(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	policy, err := core.NewPolicy("RULE SEXUAL_CONTENT | Sexual Content\noriginal-policy-snapshot")
+	policy, err := domain.NewPolicy("RULE SEXUAL_CONTENT | Sexual Content\noriginal-policy-snapshot")
 	if err != nil {
 		t.Fatal(err)
 	}
-	imageData, err := os.ReadFile("../http/testdata/landscape.webp")
+	imageData, err := os.ReadFile("../adapter/http/testdata/landscape.webp")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -120,11 +122,11 @@ func TestPostgresWorkflow(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer store.Close()
-	service := core.NewService(repo, store, policy, "saved-thinking-model")
+	guard := service.NewGuard(repo, store, nil, policy, "saved-thinking-model", service.Options{})
 	gin.SetMode(gin.TestMode)
-	router, err := httpapi.NewRouter(httpapi.NewHandler(service, httpapi.UploadLimits{
+	router, err := httpapi.NewRouter(httpapi.NewHandler(guard, httpapi.UploadLimits{
 		MaxBytes: int64(len(imageData)), MaxLongSide: 1920, MaxShortSide: 1080, MaxConcurrent: 2,
-	}), zap.NewNop(), repo.Ping)
+	}), zap.NewNop(), client.Ping)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -235,7 +237,9 @@ func TestPostgresWorkflow(t *testing.T) {
 		defer stub.Close()
 		model := modelapi.New(modelapi.Options{BaseURL: stub.URL + "/v1", Timeout: 3 * time.Second, MaxTokens: 8192, MaxResponseBytes: 1024, Temperature: 0.6, TopP: 0.95, Concurrency: 1})
 		defer model.Close()
-		processor := core.NewProcessor(repo, store, model, time.Minute, 3*time.Second, time.Millisecond, 2)
+		processor := service.NewGuard(repo, store, model, policy, "saved-thinking-model", service.Options{
+			Lease: time.Minute, Timeout: 3 * time.Second, RetryDelay: time.Millisecond, MaxAttempts: 2,
+		})
 		if worked, err := processor.ProcessNext(ctx); err != nil || !worked {
 			t.Fatalf("process: %v %v", worked, err)
 		}
@@ -266,7 +270,9 @@ func TestPostgresWorkflow(t *testing.T) {
 		defer stub.Close()
 		model := modelapi.New(modelapi.Options{BaseURL: stub.URL + "/v1", Timeout: 3 * time.Second, MaxTokens: 8192, MaxResponseBytes: 1024, Temperature: 0.6, TopP: 0.95, Concurrency: 1})
 		defer model.Close()
-		processor := core.NewProcessor(repo, store, model, time.Minute, 3*time.Second, 0, 2)
+		processor := service.NewGuard(repo, store, model, policy, "saved-thinking-model", service.Options{
+			Lease: time.Minute, Timeout: 3 * time.Second, MaxAttempts: 2,
+		})
 		for i := 0; i < 2; i++ {
 			if worked, err := processor.ProcessNext(ctx); err != nil || !worked {
 				t.Fatalf("retry %d: %v %v", i, worked, err)
@@ -280,13 +286,13 @@ func TestPostgresWorkflow(t *testing.T) {
 
 	create := func(t *testing.T) string {
 		t.Helper()
-		id, err := core.NewID()
+		id, err := domain.NewID()
 		if err != nil {
 			t.Fatal(err)
 		}
 		now := time.Now().UTC()
-		if err := repo.Create(ctx, core.ImageRecord{ID: id, StorageKey: id + ".webp", SizeBytes: 1, Width: 1, Height: 1,
-			Status: core.StatusPending, PolicyText: policy.Text(), PolicyHash: policy.Hash(), Model: "thinking", CreatedAt: now, UpdatedAt: now}); err != nil {
+		if err := repo.Create(ctx, domain.ImageRecord{ID: id, StorageKey: id + ".webp", SizeBytes: 1, Width: 1, Height: 1,
+			Status: domain.StatusPending, PolicyText: policy.Text(), PolicyHash: policy.Hash(), Model: "thinking", CreatedAt: now, UpdatedAt: now}); err != nil {
 			t.Fatal(err)
 		}
 		return id
@@ -311,15 +317,15 @@ func TestPostgresWorkflow(t *testing.T) {
 		if first.ClaimToken == second.ClaimToken || second.Image.Attempts != 2 {
 			t.Fatal("claim was not renewed")
 		}
-		assessment := core.Assessment{Reason: "Safe."}
-		if err := repo.Complete(ctx, *first, assessment); !errors.Is(err, core.ErrLostClaim) {
+		assessment := domain.Assessment{Reason: "Safe."}
+		if err := repo.Complete(ctx, *first, assessment); !errors.Is(err, domain.ErrLostClaim) {
 			t.Fatalf("stale completion: %v", err)
 		}
 		if err := repo.Complete(ctx, *second, assessment); err != nil {
 			t.Fatal(err)
 		}
 		record, err := repo.Get(ctx, id)
-		if err != nil || record.Status != core.StatusCompleted || record.Result.Violation || record.Result.Severity != 0 {
+		if err != nil || record.Status != domain.StatusCompleted || record.Result.Violation || record.Result.Severity != 0 {
 			t.Fatalf("zero values not saved: %+v %v", record, err)
 		}
 	})
@@ -335,7 +341,7 @@ func TestPostgresWorkflow(t *testing.T) {
 			t.Fatalf("exhausted job reclaimed: %v", err)
 		}
 		record, err := repo.Get(ctx, id)
-		if err != nil || record.Status != core.StatusFailed || record.Failure == nil {
+		if err != nil || record.Status != domain.StatusFailed || record.Failure == nil {
 			t.Fatalf("exhausted job stuck: %+v %v", record, err)
 		}
 	})
@@ -343,7 +349,7 @@ func TestPostgresWorkflow(t *testing.T) {
 		for i := 0; i < 8; i++ {
 			create(t)
 		}
-		jobs := make(chan *core.Job, 8)
+		jobs := make(chan *domain.Job, 8)
 		var wg sync.WaitGroup
 		for i := 0; i < 8; i++ {
 			wg.Add(1)

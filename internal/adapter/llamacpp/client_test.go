@@ -15,7 +15,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/barluscuda/golang-images-guard-qwen3vl-2b/internal/core"
+	"github.com/barluscuda/golang-images-guard-qwen3vl-2b/internal/domain"
+	"github.com/barluscuda/golang-images-guard-qwen3vl-2b/internal/port"
 	"golang.org/x/image/webp"
 )
 
@@ -23,7 +24,7 @@ func TestClientThinkingAndFailures(t *testing.T) {
 	// Neither hosted-provider nor legacy model credentials may affect requests.
 	t.Setenv("OPENAI_API_KEY", "must-not-be-sent")
 	t.Setenv("GUARD_MODEL_API_KEY", "must-not-be-sent")
-	policy, err := core.NewPolicy("RULE SEXUAL_CONTENT | Sexual Content")
+	policy, err := domain.NewPolicy("RULE SEXUAL_CONTENT | Sexual Content")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -41,13 +42,13 @@ func TestClientThinkingAndFailures(t *testing.T) {
 		wantErr               error
 	}{
 		{"llamacpp-thinking", "stop", `{"violation":false,"severity":0,"rule":null,"reason":"Safe."}`, 200, 0, nil},
-		{"truncated", "length", `{"violation":false,"severity":0,"rule":null,"reason":"Safe."}`, 200, 0, core.ErrInvalidAssessment},
-		{"mixed-thinking", "stop", `<think>private</think>{"violation":false,"severity":0,"rule":null,"reason":"Safe."}`, 200, 0, core.ErrInvalidAssessment},
-		{"malformed-content", "stop", `not JSON`, 200, 0, core.ErrInvalidAssessment},
-		{"bounded-chunked-response", "stop", "", 200, 1, core.ErrModelUnavailable},
-		{"bounded-content-length", "stop", "", 200, 2, core.ErrModelUnavailable},
-		{"server-unavailable", "", "private request data", 503, 0, core.ErrModelUnavailable},
-		{"redirect", "", "", 307, 0, core.ErrModelUnavailable},
+		{"truncated", "length", `{"violation":false,"severity":0,"rule":null,"reason":"Safe."}`, 200, 0, domain.ErrInvalidAssessment},
+		{"mixed-thinking", "stop", `<think>private</think>{"violation":false,"severity":0,"rule":null,"reason":"Safe."}`, 200, 0, domain.ErrInvalidAssessment},
+		{"malformed-content", "stop", `not JSON`, 200, 0, domain.ErrInvalidAssessment},
+		{"bounded-chunked-response", "stop", "", 200, 1, port.ErrModelUnavailable},
+		{"bounded-content-length", "stop", "", 200, 2, port.ErrModelUnavailable},
+		{"server-unavailable", "", "private request data", 503, 0, port.ErrModelUnavailable},
+		{"redirect", "", "", 307, 0, port.ErrModelUnavailable},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			stub := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -127,7 +128,7 @@ func TestClientThinkingAndFailures(t *testing.T) {
 			client := New(Options{BaseURL: stub.URL + "/v1/",
 				Timeout: time.Second, MaxTokens: 8192, MaxResponseBytes: 1024, Temperature: 0.6, TopP: 0.95, Concurrency: 1})
 			defer client.Close()
-			result, err := client.Assess(context.Background(), core.Image{Data: imageData}, policy, "thinking-model")
+			result, err := client.Assess(context.Background(), domain.Image{Data: imageData}, policy, "thinking-model")
 			if !errors.Is(err, tc.wantErr) {
 				t.Fatalf("got %v want %v", err, tc.wantErr)
 			}
@@ -143,7 +144,7 @@ func TestClientCanceledContext(t *testing.T) {
 	defer client.Close()
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	if _, err := client.Assess(ctx, core.Image{}, core.Policy{}, "thinking"); !errors.Is(err, context.Canceled) {
+	if _, err := client.Assess(ctx, domain.Image{}, domain.Policy{}, "thinking"); !errors.Is(err, context.Canceled) {
 		t.Fatalf("got %v want cancellation", err)
 	}
 }

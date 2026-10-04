@@ -6,18 +6,19 @@ import (
 	"sync"
 	"time"
 
-	"github.com/barluscuda/golang-images-guard-qwen3vl-2b/internal/core"
+	"github.com/barluscuda/golang-images-guard-qwen3vl-2b/internal/domain"
+	"github.com/barluscuda/golang-images-guard-qwen3vl-2b/internal/service"
 	"go.uber.org/zap"
 )
 
 type Worker struct {
-	processor    *core.Processor
+	processor    *service.Guard
 	log          *zap.Logger
 	concurrency  int
 	pollInterval time.Duration
 }
 
-func New(processor *core.Processor, log *zap.Logger, concurrency int, pollInterval time.Duration) *Worker {
+func New(processor *service.Guard, log *zap.Logger, concurrency int, pollInterval time.Duration) *Worker {
 	return &Worker{processor: processor, log: log, concurrency: concurrency, pollInterval: pollInterval}
 }
 
@@ -34,7 +35,7 @@ func (w *Worker) loop(ctx context.Context) {
 	for ctx.Err() == nil {
 		worked, err := w.processor.ProcessNext(ctx)
 		if err != nil && ctx.Err() == nil {
-			if errors.Is(err, core.ErrLostClaim) {
+			if errors.Is(err, domain.ErrLostClaim) {
 				w.log.Warn("processing claim expired")
 			} else {
 				w.log.Error("worker operation failed", zap.Error(err))

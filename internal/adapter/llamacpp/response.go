@@ -6,17 +6,17 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/barluscuda/golang-images-guard-qwen3vl-2b/internal/core"
+	"github.com/barluscuda/golang-images-guard-qwen3vl-2b/internal/domain"
 )
 
 // ParseAssessment rejects missing/null fields, duplicate keys, and trailing content.
-func ParseAssessment(content string) (core.Assessment, error) {
+func ParseAssessment(content string) (domain.Assessment, error) {
 	data := []byte(content)
 	if err := uniqueKeys(data); err != nil {
-		return core.Assessment{}, core.ErrInvalidAssessment
+		return domain.Assessment{}, domain.ErrInvalidAssessment
 	}
 	if !exactKeys(data, "violation", "severity", "rule", "reason") {
-		return core.Assessment{}, core.ErrInvalidAssessment
+		return domain.Assessment{}, domain.ErrInvalidAssessment
 	}
 	var raw struct {
 		Violation *bool           `json:"violation"`
@@ -25,21 +25,21 @@ func ParseAssessment(content string) (core.Assessment, error) {
 		Reason    *string         `json:"reason"`
 	}
 	if err := strictDecode(data, &raw); err != nil || raw.Violation == nil || raw.Severity == nil || raw.Reason == nil || len(raw.Rule) == 0 {
-		return core.Assessment{}, core.ErrInvalidAssessment
+		return domain.Assessment{}, domain.ErrInvalidAssessment
 	}
-	a := core.Assessment{Violation: *raw.Violation, Severity: *raw.Severity, Reason: *raw.Reason}
+	a := domain.Assessment{Violation: *raw.Violation, Severity: *raw.Severity, Reason: *raw.Reason}
 	if !bytes.Equal(bytes.TrimSpace(raw.Rule), []byte("null")) {
 		if !exactKeys(raw.Rule, "id", "name") {
-			return core.Assessment{}, core.ErrInvalidAssessment
+			return domain.Assessment{}, domain.ErrInvalidAssessment
 		}
 		var rule struct {
 			ID   *string `json:"id"`
 			Name *string `json:"name"`
 		}
 		if err := strictDecode(raw.Rule, &rule); err != nil || rule.ID == nil || rule.Name == nil {
-			return core.Assessment{}, core.ErrInvalidAssessment
+			return domain.Assessment{}, domain.ErrInvalidAssessment
 		}
-		a.Rule = &core.Rule{ID: *rule.ID, Name: *rule.Name}
+		a.Rule = &domain.Rule{ID: *rule.ID, Name: *rule.Name}
 	}
 	return a, nil
 }

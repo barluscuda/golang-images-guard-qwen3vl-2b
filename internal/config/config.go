@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/barluscuda/golang-images-guard-qwen3vl-2b/internal/core"
+	"github.com/barluscuda/golang-images-guard-qwen3vl-2b/internal/domain"
 	"github.com/spf13/viper"
 )
 
@@ -49,7 +49,7 @@ type Config struct {
 	Log    struct{ Level string } `mapstructure:"log"`
 }
 
-func Load(path string) (Config, core.Policy, error) {
+func Load(path string) (Config, domain.Policy, error) {
 	v := viper.New()
 	v.SetEnvPrefix("GUARD")
 	v.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
@@ -63,16 +63,16 @@ func Load(path string) (Config, core.Policy, error) {
 	for key, value := range defaults {
 		v.SetDefault(key, value)
 		if err := v.BindEnv(key); err != nil {
-			return Config{}, core.Policy{}, err
+			return Config{}, domain.Policy{}, err
 		}
 	}
 	v.SetConfigFile(path)
 	if err := v.ReadInConfig(); err != nil {
-		return Config{}, core.Policy{}, fmt.Errorf("read config: %w", err)
+		return Config{}, domain.Policy{}, fmt.Errorf("read config: %w", err)
 	}
 	var cfg Config
 	if err := v.UnmarshalExact(&cfg); err != nil {
-		return cfg, core.Policy{}, fmt.Errorf("decode config: %w", err)
+		return cfg, domain.Policy{}, fmt.Errorf("decode config: %w", err)
 	}
 	cfg.Model.BaseURL = "http://127.0.0.1:8000/v1"
 	if endpoint, ok := os.LookupEnv("GUARD_MODEL_BASE_URL"); ok {
@@ -85,18 +85,18 @@ func Load(path string) (Config, core.Policy, error) {
 	cfg.Model.Temperature = 0.6
 	cfg.Model.TopP = 0.95
 	if err := cfg.Validate(); err != nil {
-		return cfg, core.Policy{}, err
+		return cfg, domain.Policy{}, err
 	}
 	f, err := os.Open(cfg.Policy.Path)
 	if err != nil {
-		return cfg, core.Policy{}, fmt.Errorf("read policy: %w", err)
+		return cfg, domain.Policy{}, fmt.Errorf("read policy: %w", err)
 	}
 	defer f.Close()
-	data, err := io.ReadAll(io.LimitReader(f, core.MaxPolicyBytes+1))
+	data, err := io.ReadAll(io.LimitReader(f, domain.MaxPolicyBytes+1))
 	if err != nil {
-		return cfg, core.Policy{}, err
+		return cfg, domain.Policy{}, err
 	}
-	policy, err := core.NewPolicy(string(data))
+	policy, err := domain.NewPolicy(string(data))
 	return cfg, policy, err
 }
 

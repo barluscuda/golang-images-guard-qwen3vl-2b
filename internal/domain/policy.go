@@ -1,4 +1,4 @@
-package core
+package domain
 
 import (
 	"crypto/sha256"

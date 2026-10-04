@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/barluscuda/golang-images-guard-qwen3vl-2b/internal/core"
+	"github.com/barluscuda/golang-images-guard-qwen3vl-2b/internal/domain"
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
 )
@@ -16,7 +16,7 @@ func NewRouter(handler *Handler, log *zap.Logger, ready func(context.Context) er
 		return nil, err
 	}
 	r.Use(func(c *gin.Context) {
-		id, err := core.NewID()
+		id, err := domain.NewID()
 		if err != nil {
 			respondError(c, http.StatusInternalServerError, "internal_error", "Request could not be initialized.")
 			return

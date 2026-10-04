@@ -128,12 +128,17 @@ There is no `model` section in YAML. The application only calls the llama.cpp AP
 ## Architecture and recovery
 
 ```text
-HTTP adapter ──► core service ──► repository and storage ports
-Worker adapter ► core processor ► repository, storage and model ports
-                             ◄── PostgreSQL/GORM, filesystem, llama.cpp HTTP adapters
+adapter/http ──► service ◄── adapter/worker
+                    │
+                    ├──► domain
+                    ├──► port.ImageRepository ◄── repository
+                    ├──► port.ImageStorage ◄───── adapter/storage
+                    └──► port.Model ◄──────────── adapter/llamacpp
+
+adapter/postgres ──► GORM connection ──► repository
 ```
 
-The core has no framework dependencies. `cmd/guard` owns construction and shutdown. GORM records and API/model JSON formats belong to adapters.
+The domain has no infrastructure dependencies. `cmd/api` owns construction and shutdown. GORM records and API/model JSON formats stay outside the domain.
 
 PostgreSQL is the durable work queue. Workers use `FOR UPDATE SKIP LOCKED` in a short transaction, then release the transaction before inference. Claim tokens fence result writes, and expired leases allow recovery after crashes. Failures retry up to three attempts with increasing delays; exhausted jobs become `failed`. Database completion failures leave the lease available for recovery.
 
@@ -146,7 +151,7 @@ SQL migrations under `migrations/` are applied through the separate migrate comm
 Requires Go 1.25 or newer.
 
 ```sh
-go build -o bin/guard ./cmd/guard
+go build -o bin/guard ./cmd/api
 go test ./...
 go vet ./...
 ```
@@ -160,7 +165,7 @@ GUARD_DATABASE_DSN='postgres://guard:password@127.0.0.1:5432/guard?sslmode=disab
 PostgreSQL integration checks are opt-in:
 
 ```sh
-GUARD_TEST_DATABASE_DSN='postgres://guard:password@127.0.0.1:5432/guard?sslmode=disable' go test ./internal/adapters/postgres -v
+GUARD_TEST_DATABASE_DSN='postgres://guard:password@127.0.0.1:5432/guard?sslmode=disable' go test ./internal/repository -v
 ```
 
 Integration checks create and remove their own uniquely named schema. They cover migration reversibility, asynchronous upload/status, invalid model output, concurrent claims, expired leases, and stale result fencing. Model requests in checks use an HTTP stub; assessing real model quality and runtime compatibility requires your running llama.cpp server.

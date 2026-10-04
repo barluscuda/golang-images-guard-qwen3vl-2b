@@ -3,11 +3,11 @@ package llamacpp
 import (
 	"testing"
 
-	"github.com/barluscuda/golang-images-guard-qwen3vl-2b/internal/core"
+	"github.com/barluscuda/golang-images-guard-qwen3vl-2b/internal/domain"
 )
 
 func TestStrictAssessmentJSON(t *testing.T) {
-	policy, err := core.NewPolicy("RULE SEXUAL_CONTENT | Sexual Content")
+	policy, err := domain.NewPolicy("RULE SEXUAL_CONTENT | Sexual Content")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -19,7 +19,7 @@ func TestStrictAssessmentJSON(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if err := core.ValidateAssessment(a, policy); err != nil {
+		if err := domain.ValidateAssessment(a, policy); err != nil {
 			t.Fatal(err)
 		}
 	}

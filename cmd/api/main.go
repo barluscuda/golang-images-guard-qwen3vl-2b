@@ -12,13 +12,14 @@ import (
 	"syscall"
 	"time"
 
-	httpapi "github.com/barluscuda/golang-images-guard-qwen3vl-2b/internal/adapters/http"
-	modelapi "github.com/barluscuda/golang-images-guard-qwen3vl-2b/internal/adapters/llamacpp"
-	"github.com/barluscuda/golang-images-guard-qwen3vl-2b/internal/adapters/postgres"
-	"github.com/barluscuda/golang-images-guard-qwen3vl-2b/internal/adapters/storage"
-	"github.com/barluscuda/golang-images-guard-qwen3vl-2b/internal/adapters/worker"
+	httpapi "github.com/barluscuda/golang-images-guard-qwen3vl-2b/internal/adapter/http"
+	modelapi "github.com/barluscuda/golang-images-guard-qwen3vl-2b/internal/adapter/llamacpp"
+	"github.com/barluscuda/golang-images-guard-qwen3vl-2b/internal/adapter/postgres"
+	"github.com/barluscuda/golang-images-guard-qwen3vl-2b/internal/adapter/storage"
+	"github.com/barluscuda/golang-images-guard-qwen3vl-2b/internal/adapter/worker"
 	"github.com/barluscuda/golang-images-guard-qwen3vl-2b/internal/config"
-	"github.com/barluscuda/golang-images-guard-qwen3vl-2b/internal/core"
+	"github.com/barluscuda/golang-images-guard-qwen3vl-2b/internal/repository"
+	"github.com/barluscuda/golang-images-guard-qwen3vl-2b/internal/service"
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
 )
@@ -47,12 +48,13 @@ func run(path string) error {
 	}
 	defer func() { _ = log.Sync() }()
 	connectCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	repo, err := postgres.Open(connectCtx, cfg.Database.DSN, cfg.Database.MaxOpen, cfg.Database.MaxIdle)
+	db, err := postgres.Open(connectCtx, cfg.Database.DSN, cfg.Database.MaxOpen, cfg.Database.MaxIdle)
 	cancel()
 	if err != nil {
 		return fmt.Errorf("open PostgreSQL: %w", err)
 	}
-	defer repo.Close()
+	defer db.Close()
+	repo := repository.NewImage(db.DB())
 	store, err := storage.NewLocal(cfg.Storage.Directory, cfg.Upload.MaxBytes)
 	if err != nil {
 		return fmt.Errorf("open storage: %w", err)
@@ -62,13 +64,15 @@ func run(path string) error {
 		MaxTokens: cfg.Model.MaxTokens, MaxResponseBytes: cfg.Model.MaxResponseBytes,
 		Temperature: cfg.Model.Temperature, TopP: cfg.Model.TopP, Concurrency: cfg.Worker.Concurrency})
 	defer model.Close()
-	service := core.NewService(repo, store, policy, cfg.Model.Name)
-	processor := core.NewProcessor(repo, store, model, cfg.Worker.LeaseDuration, cfg.Model.Timeout, cfg.Worker.RetryDelay, cfg.Worker.MaxAttempts)
-	background := worker.New(processor, log, cfg.Worker.Concurrency, cfg.Worker.PollInterval)
+	guard := service.NewGuard(repo, store, model, policy, cfg.Model.Name, service.Options{
+		Lease: cfg.Worker.LeaseDuration, Timeout: cfg.Model.Timeout,
+		RetryDelay: cfg.Worker.RetryDelay, MaxAttempts: cfg.Worker.MaxAttempts,
+	})
+	background := worker.New(guard, log, cfg.Worker.Concurrency, cfg.Worker.PollInterval)
 	gin.SetMode(gin.ReleaseMode)
-	handler := httpapi.NewHandler(service, httpapi.UploadLimits{MaxBytes: cfg.Upload.MaxBytes,
+	handler := httpapi.NewHandler(guard, httpapi.UploadLimits{MaxBytes: cfg.Upload.MaxBytes,
 		MaxLongSide: cfg.Upload.MaxLongSide, MaxShortSide: cfg.Upload.MaxShortSide, MaxConcurrent: cfg.Upload.MaxConcurrent})
-	router, err := httpapi.NewRouter(handler, log, repo.Ping)
+	router, err := httpapi.NewRouter(handler, log, db.Ping)
 	if err != nil {
 		return err
 	}

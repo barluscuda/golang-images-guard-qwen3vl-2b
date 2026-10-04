@@ -9,7 +9,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/barluscuda/golang-images-guard-qwen3vl-2b/internal/core"
+	"github.com/barluscuda/golang-images-guard-qwen3vl-2b/internal/domain"
+	"github.com/barluscuda/golang-images-guard-qwen3vl-2b/internal/port"
 )
 
 type Local struct {
@@ -34,7 +35,7 @@ func NewLocal(dir string, maxBytes int64) (*Local, error) {
 func (s *Local) Close() error { return s.root.Close() }
 
 func validKey(key string) bool {
-	return strings.HasSuffix(key, ".webp") && core.ValidID(strings.TrimSuffix(key, ".webp"))
+	return strings.HasSuffix(key, ".webp") && domain.ValidID(strings.TrimSuffix(key, ".webp"))
 }
 
 func (s *Local) Put(ctx context.Context, key string, data []byte) error {
@@ -44,7 +45,7 @@ func (s *Local) Put(ctx context.Context, key string, data []byte) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	id, err := core.NewID()
+	id, err := domain.NewID()
 	if err != nil {
 		return err
 	}
@@ -144,7 +145,7 @@ func (s *Local) PruneOrphans(ctx context.Context, cutoff time.Time,
 				return err
 			}
 			key := entry.Name()
-			isTemp := strings.HasPrefix(key, ".tmp-") && core.ValidID(strings.TrimPrefix(key, ".tmp-"))
+			isTemp := strings.HasPrefix(key, ".tmp-") && domain.ValidID(strings.TrimPrefix(key, ".tmp-"))
 			if !entry.Type().IsRegular() || (!isTemp && !validKey(key)) {
 				continue
 			}
@@ -176,4 +177,4 @@ func (s *Local) PruneOrphans(ctx context.Context, cutoff time.Time,
 	}
 }
 
-var _ core.ImageStorage = (*Local)(nil)
+var _ port.ImageStorage = (*Local)(nil)

@@ -1,18 +1,15 @@
-package core
+package domain
 
 import (
 	"crypto/rand"
 	"errors"
 	"fmt"
-	"strings"
 	"time"
 )
 
 var (
-	ErrNotFound          = errors.New("image not found")
-	ErrLostClaim         = errors.New("processing claim lost")
-	ErrInvalidAssessment = errors.New("invalid assessment")
-	ErrModelUnavailable  = errors.New("model unavailable")
+	ErrNotFound  = errors.New("image not found")
+	ErrLostClaim = errors.New("processing claim lost")
 )
 
 type Status string
@@ -24,22 +21,13 @@ const (
 	StatusFailed     Status = "failed"
 )
 
-type Rule struct{ ID, Name string }
-
-type Assessment struct {
-	Violation bool
-	Severity  int
-	Rule      *Rule
-	Reason    string
-}
-
-type Failure struct{ Code, Message string }
-
+// Image is the original image content and its decoded dimensions.
 type Image struct {
 	Data          []byte
 	Width, Height int
 }
 
+// ImageRecord is the persisted moderation job and its public assessment state.
 type ImageRecord struct {
 	ID, StorageKey         string
 	SizeBytes              int64
@@ -53,6 +41,7 @@ type ImageRecord struct {
 	CreatedAt, UpdatedAt   time.Time
 }
 
+// Job is an image record claimed by a worker. ClaimToken fences stale workers.
 type Job struct {
 	Image      ImageRecord
 	ClaimToken string
@@ -82,24 +71,4 @@ func ValidID(id string) bool {
 		}
 	}
 	return true
-}
-
-func ValidateAssessment(a Assessment, p Policy) error {
-	if a.Severity < 0 || a.Severity > 10 || strings.TrimSpace(a.Reason) == "" || len(a.Reason) > 2048 {
-		return ErrInvalidAssessment
-	}
-	if !a.Violation {
-		if a.Severity != 0 || a.Rule != nil {
-			return ErrInvalidAssessment
-		}
-		return nil
-	}
-	if a.Severity == 0 || a.Rule == nil {
-		return ErrInvalidAssessment
-	}
-	name, ok := p.rules[a.Rule.ID]
-	if !ok || name != a.Rule.Name {
-		return ErrInvalidAssessment
-	}
-	return nil
 }
