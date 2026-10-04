@@ -1,8 +1,159 @@
 Assess the uploaded image using only the rules declared below.
-Report the most severe applicable rule. Do not infer violations from unsupported assumptions.
-If no rule applies, return violation=false, severity=0, rule=null and a short reason.
+
+Report the most severe applicable rule.
+
+Do not infer violations from unsupported assumptions. Judge only content that is visibly present in the image.
+
+If multiple rules apply, return the rule with the highest severity.
+
+If no rule applies, return:
+
+violation=false, severity=0, rule=null
+
+Include a short factual reason explaining the decision.
+
+Severity scale:
+
+1–3 = minor
+4–6 = moderate
+7–9 = severe
+10 = extreme
+
 
 RULE SEXUAL_CONTENT | Sexual Content
-Prohibit visible explicit sexual activity and explicit displays of sexual anatomy.
-Do not classify ordinary clothing, swimwear, non-explicit affection, or non-explicit medical illustrations as violations.
-Use severity 1–3 for minor violations, 4–6 for moderate violations, 7–9 for severe violations, and 10 for extreme violations.
+
+Prohibit visible explicit sexual activity, sexual acts, explicit sexual poses, and explicit displays of sexual anatomy.
+
+Prohibit pornography and clearly sexualized exposure intended primarily for sexual stimulation.
+
+Do not classify ordinary clothing, underwear, swimwear, breastfeeding, non-explicit affection, artistic nudity without explicit sexual focus, or non-explicit medical illustrations as violations.
+
+Do not assume sexual activity when the image is ambiguous.
+
+Use severity 1–3 for minor sexual violations, 4–6 for moderate explicit content, 7–9 for clearly pornographic or highly explicit content, and 10 for extreme sexual content.
+
+
+RULE CHILD_SEXUAL_CONTENT | Sexual Content Involving Minors
+
+Prohibit sexual activity, sexualized nudity, sexual exploitation, or clearly sexualized presentation involving a person visibly identifiable as a minor.
+
+Explicit sexual activity involving a minor must always receive severity 10.
+
+Do not infer that a person is a minor solely from uncertain appearance. If age cannot reasonably be determined from the image, do not make unsupported assumptions.
+
+Ordinary family photographs, children wearing normal clothing or swimwear, medical contexts, and non-sexual images of children are not violations.
+
+Use severity 7–9 for clearly sexualized content involving minors and severity 10 for explicit sexual exploitation or sexual activity.
+
+
+RULE GRAPHIC_VIOLENCE | Graphic Violence
+
+Prohibit clearly visible graphic violence including severe open wounds, exposed organs, dismemberment, decapitation, mutilation, or extreme amounts of blood associated with serious injury or death.
+
+Minor injuries, small amounts of blood, sports injuries, fictional combat without graphic injury, and ordinary medical imagery are not automatically violations.
+
+Do not infer death or severe injury when it is not visibly supported.
+
+Use severity 1–3 for mildly graphic injuries, 4–6 for substantial visible injury or blood, 7–9 for severe gore or mutilation, and 10 for exceptionally graphic or extreme gore.
+
+
+RULE SELF_HARM | Self-Harm
+
+Prohibit visible intentional self-injury, suicide attempts, or graphic consequences of deliberate self-harm.
+
+Images merely showing scars, bandages, emotional distress, or objects that could potentially be used for self-harm are not violations without visible evidence of self-harm.
+
+Do not infer suicidal intent from ambiguous situations.
+
+Use severity 4–6 for visible non-lethal self-injury, 7–9 for severe self-harm or suicide attempts, and 10 for extreme or fatal self-harm imagery.
+
+
+RULE HATE_EXTREMISM | Hate or Extremist Content
+
+Prohibit imagery explicitly promoting, praising, recruiting for, or encouraging violence or hatred against people based on protected characteristics.
+
+Prohibit explicit propaganda supporting violent extremist organizations when the image clearly endorses or promotes them.
+
+Historical, journalistic, educational, documentary, or condemnatory depictions are not violations merely because extremist symbols are visible.
+
+A symbol alone is insufficient unless the image clearly promotes hateful or extremist ideology.
+
+Use severity 1–3 for minor promotional hateful content, 4–6 for explicit hateful advocacy, 7–9 for violent extremist propaganda or calls for violence, and 10 for extreme incitement or celebration of mass violence.
+
+
+RULE WEAPONS | Dangerous Weapons
+
+Prohibit images that clearly depict active threatening use of weapons against another person or preparation for imminent violent harm.
+
+Simply possessing, displaying, collecting, transporting, or photographing a legal weapon is not automatically a violation.
+
+Fictional, historical, military, sporting, museum, or instructional contexts are not violations unless the image visibly promotes imminent harmful use.
+
+Do not infer intent from the presence of a weapon alone.
+
+Use severity 1–3 for minor unsafe threatening behavior, 4–6 for credible armed threats, 7–9 for active violent weapon use, and 10 for extreme or mass-casualty violence.
+
+
+RULE DRUGS | Illegal Drug Activity
+
+Prohibit visible production, preparation, consumption, or distribution of clearly identifiable illegal hard drugs when the activity itself is visibly demonstrated.
+
+Do not classify ordinary medication, legal pharmaceuticals, alcohol, tobacco, unidentified powders, plants, or ambiguous substances as illegal drugs without sufficient visual evidence.
+
+Do not infer the identity of an unknown substance.
+
+Use severity 1–3 for minor visible drug use, 4–6 for clear preparation or distribution, and 7–9 for large-scale or dangerous illegal drug activity.
+
+
+RULE ILLEGAL_ACTIVITY | Serious Illegal Activity
+
+Prohibit imagery clearly showing serious criminal activity in progress when the harmful or criminal act itself is visibly evident.
+
+Examples include kidnapping, human trafficking, violent robbery, deliberate arson, or serious physical abuse.
+
+Do not infer criminal intent merely from unusual objects, clothing, locations, gestures, or suspicious-looking circumstances.
+
+Use severity 1–3 for minor visible wrongdoing, 4–6 for significant criminal activity, 7–9 for serious violent crime, and 10 for extreme criminal violence involving immediate danger to life.
+
+
+RULE ABUSE | Physical Abuse
+
+Prohibit clearly visible deliberate physical abuse, torture, or cruel treatment of a person or animal.
+
+Normal restraint for medical care, animal handling, sports, training, or other legitimate contexts is not automatically abuse.
+
+Do not infer abuse from injuries alone unless deliberate mistreatment is visibly supported.
+
+Use severity 3–5 for moderate visible abuse, 6–8 for severe abuse, 9 for torture or extreme cruelty, and 10 for exceptionally severe or fatal abuse.
+
+
+RULE DISTURBING_CONTENT | Extremely Disturbing Content
+
+Use this rule only when an image contains highly disturbing material that does not fit another more specific rule.
+
+Examples may include decomposed human remains or exceptionally disturbing biological imagery.
+
+Do not use this rule merely because an image is unpleasant, frightening, dirty, medical, or unusual.
+
+Prefer a more specific rule whenever one applies.
+
+Use severity 4–6 for substantially disturbing imagery and 7–10 for extreme imagery.
+
+
+GENERAL CLASSIFICATION RULES
+
+Base the assessment only on visible evidence.
+
+Do not invent context, intent, identity, relationships, age, location, events, or actions that cannot reasonably be determined from the image.
+
+Do not classify something as prohibited merely because it could potentially be dangerous or illegal.
+
+When evidence is ambiguous, prefer the non-violation interpretation.
+
+Use the lowest severity that accurately represents the visible violation.
+
+Only return severity 10 for exceptionally severe content.
+
+If a specific rule applies, return its exact RULE identifier.
+
+If nothing clearly violates these rules, return violation=false, severity=0, rule=null.

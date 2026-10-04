@@ -135,7 +135,7 @@ RULE SEXUAL_CONTENT | Sexual Content
 Describe the content this rule prohibits and any exceptions.
 ```
 
-IDs must be uppercase letters, digits, and underscores, starting with a letter. Declare 1–64 unique rules; policy size is limited to 64 KiB. The supplied file contains a sample sexual-content rule; edit it to match your intended policy.
+IDs must be uppercase letters, digits, and underscores, starting with a letter. Declare 1–64 unique rules; policy size is limited to 64 KiB. The supplied file defines example rules for sexual content (including content involving minors), graphic violence, self-harm, hate and extremism, weapons, illegal drugs, serious illegal activity, abuse, and disturbing content. Edit it to match your intended policy.
 
 Restart after changing policy. Each accepted upload saves the policy text/hash and model name, so retries and crash recovery retain that job's policy. Existing jobs do not adopt a new policy.
 
