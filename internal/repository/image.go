@@ -53,6 +53,38 @@ func (r *Image) Get(ctx context.Context, id string) (domain.ImageRecord, error) 
 	return row.record(), nil
 }
 
+// DeleteCompleted removes a processed image record and returns its storage key.
+// Locking the row makes the status check and deletion atomic with worker updates.
+func (r *Image) DeleteCompleted(ctx context.Context, id string) (string, error) {
+	var storageKey string
+	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var row imageRow
+		err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ?", id).Take(&row).Error
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return domain.ErrNotFound
+		}
+		if err != nil {
+			return err
+		}
+		if row.Status != string(domain.StatusCompleted) {
+			return domain.ErrNotProcessed
+		}
+		result := tx.Exec("DELETE FROM images WHERE id = ?", id)
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected != 1 {
+			return domain.ErrNotFound
+		}
+		storageKey = row.StorageKey
+		return nil
+	})
+	if err != nil {
+		return "", err
+	}
+	return storageKey, nil
+}
+
 func (r *Image) ExistsStorageKey(ctx context.Context, key string) (bool, error) {
 	var count int64
 	err := r.db.WithContext(ctx).Model(&imageRow{}).Where("storage_key = ?", key).Count(&count).Error

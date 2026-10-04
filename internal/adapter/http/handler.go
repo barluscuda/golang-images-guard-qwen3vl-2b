@@ -134,6 +134,27 @@ func (h *Handler) Get(c *gin.Context) {
 		Width: image.Width, Height: image.Height, Result: result, Error: failure, CreatedAt: image.CreatedAt, UpdatedAt: image.UpdatedAt})
 }
 
+func (h *Handler) Delete(c *gin.Context) {
+	id := c.Param("image_id")
+	if !domain.ValidID(id) {
+		respondError(c, http.StatusBadRequest, "invalid_id", "Image ID must be a lowercase UUID.")
+		return
+	}
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 5*time.Second)
+	defer cancel()
+	err := h.service.Delete(ctx, id)
+	switch {
+	case errors.Is(err, domain.ErrNotFound):
+		respondError(c, http.StatusNotFound, "not_found", "Image not found.")
+	case errors.Is(err, domain.ErrNotProcessed):
+		respondError(c, http.StatusConflict, "not_processed", "Image can be deleted only after processing is completed.")
+	case err != nil:
+		respondError(c, http.StatusServiceUnavailable, "delete_failed", "Image could not be deleted.")
+	default:
+		c.Status(http.StatusNoContent)
+	}
+}
+
 type ruleResponse struct {
 	ID   string `json:"id"`
 	Name string `json:"name"`

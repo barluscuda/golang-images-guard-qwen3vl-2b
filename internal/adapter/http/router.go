@@ -36,6 +36,7 @@ func NewRouter(handler *Handler, log *zap.Logger, ready func(context.Context) er
 	})
 	r.POST("/v1/images", handler.Upload)
 	r.GET("/v1/images/:image_id", handler.Get)
+	r.DELETE("/v1/images/:image_id", handler.Delete)
 	r.GET("/health/live", func(c *gin.Context) { c.JSON(http.StatusOK, gin.H{"status": "ok"}) })
 	r.GET("/health/ready", func(c *gin.Context) {
 		ctx, cancel := context.WithTimeout(c.Request.Context(), 2*time.Second)

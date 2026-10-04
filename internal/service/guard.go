@@ -61,6 +61,17 @@ func (s *Guard) Get(ctx context.Context, id string) (domain.ImageRecord, error) 
 	return s.repo.Get(ctx, id)
 }
 
+func (s *Guard) Delete(ctx context.Context, id string) error {
+	key, err := s.repo.DeleteCompleted(ctx, id)
+	if err != nil {
+		return err
+	}
+	if err := s.storage.Delete(ctx, key); err != nil {
+		return fmt.Errorf("delete image file: %w", err)
+	}
+	return nil
+}
+
 // ProcessNext claims durably before inference and commits using a fenced claim token.
 func (s *Guard) ProcessNext(ctx context.Context) (bool, error) {
 	dbCtx, cancel := context.WithTimeout(ctx, 5*time.Second)

@@ -10,6 +10,7 @@ import (
 type ImageRepository interface {
 	Create(context.Context, domain.ImageRecord) error
 	Get(context.Context, string) (domain.ImageRecord, error)
+	DeleteCompleted(context.Context, string) (string, error)
 	Claim(context.Context, time.Duration, int) (*domain.Job, error)
 	Complete(context.Context, domain.Job, domain.Assessment) error
 	RetryOrFail(context.Context, domain.Job, domain.Failure, int, time.Duration) error

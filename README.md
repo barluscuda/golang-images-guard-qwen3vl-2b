@@ -65,6 +65,14 @@ Poll image info:
 curl http://127.0.0.1:8080/v1/images/c8915c6e-d613-4943-9089-7ec4331d42df
 ```
 
+Delete a completed image and its stored file:
+
+```sh
+curl -i -X DELETE http://127.0.0.1:8080/v1/images/c8915c6e-d613-4943-9089-7ec4331d42df
+```
+
+Deletion returns **204 No Content** for completed images, **409 Conflict** while the image is pending, processing, or failed, and **404 Not Found** for an unknown ID. GET and DELETE validate lowercase UUIDs.
+
 Example completed response:
 
 ```json
@@ -95,7 +103,7 @@ Example completed response:
 
 A violation is a completed assessment. A failed assessment is never represented as safe. Non-violating results use `violation=false`, `severity=0`, `rule=null`, and a nonempty reason. Violations require severity 1–10 and an exact ID/name pair from the saved policy. When multiple rules match, the model selects the most severe rule. Severity is an ordinal score, not a calibrated probability.
 
-Errors use `{"error":{"code":"...","message":"..."}}`. Invalid uploads return 400, byte limits 413, non-WebP 415, excessive dimensions 422, unknown IDs 404, and unavailable upload/database capacity 503. Polling responses include `Cache-Control: no-store`; every routed request has `X-Request-ID`.
+Errors use `{"error":{"code":"...","message":"..."}}`. Invalid uploads return 400, byte limits 413, non-WebP 415, excessive dimensions 422, unknown IDs 404, attempts to delete an unprocessed image 409, and unavailable upload/database capacity 503. Polling responses include `Cache-Control: no-store`; every routed request has `X-Request-ID`.
 
 Health endpoints: `GET /health/live` and `GET /health/ready`. Readiness checks PostgreSQL; model availability is reflected in job outcomes.
 
@@ -143,7 +151,7 @@ The domain has no infrastructure dependencies. `cmd/api` owns the HTTP server, `
 
 PostgreSQL is the durable work queue. Workers use `FOR UPDATE SKIP LOCKED` in a short transaction, then release the transaction before inference. Claim tokens fence result writes, and expired leases allow recovery after crashes. Failures retry up to three attempts with increasing delays; exhausted jobs become `failed`. Database completion failures leave the lease available for recovery.
 
-Files are written through a temporary file, synced, and atomically renamed before creating the pending row. If database creation fails, file deletion occurs only after confirming no row exists. Startup and hourly reconciliation remove unreferenced files older than one hour. Referenced images/results are retained; this version has no expiry or image-download endpoint.
+Files are written through a temporary file, synced, and atomically renamed before creating the pending row. If database creation fails, file deletion occurs only after confirming no row exists. Startup and hourly reconciliation remove unreferenced files older than one hour. Completed images can be removed through the DELETE endpoint; this version has no image-download endpoint.
 
 SQL migrations under `migrations/` are applied by `cmd/migrate`. Startup requires clean schema version 1 and performs no schema changes.
 

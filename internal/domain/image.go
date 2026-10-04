@@ -8,8 +8,9 @@ import (
 )
 
 var (
-	ErrNotFound  = errors.New("image not found")
-	ErrLostClaim = errors.New("processing claim lost")
+	ErrNotFound     = errors.New("image not found")
+	ErrNotProcessed = errors.New("image is not processed")
+	ErrLostClaim    = errors.New("processing claim lost")
 )
 
 type Status string
