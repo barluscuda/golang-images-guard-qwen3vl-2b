@@ -1,6 +1,10 @@
 # Images Guard
 
-> **Status: Paused.** This project is not currently working, so development is on hold.
+## 🚨 PROJECT PAUSED 🚨
+
+## ⛔ THIS PROJECT IS NOT WORKING
+
+**Do not use this project until a working update is announced. Development is on hold.**
 
 A Go API that accepts a WebP image, returns its ID, and assesses it asynchronously with a local **Qwen3-VL-2B-Thinking** model through the **llama.cpp server HTTP API**. No model API key is needed. Application settings use YAML; model inference settings are fixed.
 
