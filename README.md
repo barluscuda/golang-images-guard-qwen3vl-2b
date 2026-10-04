@@ -14,13 +14,13 @@ Uses Gin, Zap, Viper, PostgreSQL, GORM, local filesystem storage, and Docker. Sc
    docker compose --profile tools run --rm migrate
    ```
 
-3. Start your local model server, then build and start the API:
+3. Start your local model server, then build and start the API and worker:
 
    ```sh
-   docker compose up -d --build guard
+   docker compose up -d --build api worker
    ```
 
-The API listens at `http://127.0.0.1:8080`. Compose stores PostgreSQL and image files in named volumes. Image files are under `/data/images`; mounts and file names are never exposed by the API. API and worker run in the same process. Multiple instances must share the same image volume and PostgreSQL database.
+The API listens at `http://127.0.0.1:8080`. Compose stores PostgreSQL and image files in named volumes. Image files are under `/data/images`; mounts and file names are never exposed by the API. The API and worker run as separate processes and share PostgreSQL and the image volume. Multiple instances must share the same image volume and PostgreSQL database.
 
 The model server is configured separately because GPU/CPU and inference runtime requirements vary. Compose reaches a host server through `host.docker.internal`; that server must listen on an interface reachable from the Docker bridge.
 
@@ -128,30 +128,33 @@ There is no `model` section in YAML. The application only calls the llama.cpp AP
 ## Architecture and recovery
 
 ```text
-adapter/http ──► service ◄── adapter/worker
-                    │
-                    ├──► domain
-                    ├──► port.ImageRepository ◄── repository
-                    ├──► port.ImageStorage ◄───── adapter/storage
-                    └──► port.Model ◄──────────── adapter/llamacpp
+cmd/api ──► adapter/http ──► service ──► domain
+                                  ├──► port.ImageRepository ◄── repository
+                                  └──► port.ImageStorage ◄───── adapter/storage
 
-adapter/postgres ──► GORM connection ──► repository
+cmd/worker ──► adapter/worker ──► service ──► port.Model ◄── adapter/llamacpp
+                                      │
+                                      └──► repository ──► GORM ──► adapter/postgres
+
+cmd/migrate ──► migrations/*.sql ──► PostgreSQL
 ```
 
-The domain has no infrastructure dependencies. `cmd/api` owns construction and shutdown. GORM records and API/model JSON formats stay outside the domain.
+The domain has no infrastructure dependencies. `cmd/api` owns the HTTP server, `cmd/worker` owns inference and orphan reconciliation, and `cmd/migrate` applies SQL migrations. GORM records and API/model JSON formats stay outside the domain.
 
 PostgreSQL is the durable work queue. Workers use `FOR UPDATE SKIP LOCKED` in a short transaction, then release the transaction before inference. Claim tokens fence result writes, and expired leases allow recovery after crashes. Failures retry up to three attempts with increasing delays; exhausted jobs become `failed`. Database completion failures leave the lease available for recovery.
 
 Files are written through a temporary file, synced, and atomically renamed before creating the pending row. If database creation fails, file deletion occurs only after confirming no row exists. Startup and hourly reconciliation remove unreferenced files older than one hour. Referenced images/results are retained; this version has no expiry or image-download endpoint.
 
-SQL migrations under `migrations/` are applied through the separate migrate command. Startup requires clean schema version 1 and performs no schema changes. [Migration tooling](https://github.com/golang-migrate/migrate).
+SQL migrations under `migrations/` are applied by `cmd/migrate`. Startup requires clean schema version 1 and performs no schema changes.
 
 ## Build and checks
 
 Requires Go 1.25 or newer.
 
 ```sh
-go build -o bin/guard ./cmd/api
+go build -o bin/api ./cmd/api
+go build -o bin/worker ./cmd/worker
+go build -o bin/migrate ./cmd/migrate
 go test ./...
 go vet ./...
 ```
@@ -159,8 +162,11 @@ go vet ./...
 For a local run against an already migrated PostgreSQL database:
 
 ```sh
-GUARD_DATABASE_DSN='postgres://guard:password@127.0.0.1:5432/guard?sslmode=disable' ./bin/guard
+GUARD_DATABASE_DSN='postgres://guard:password@127.0.0.1:5432/guard?sslmode=disable' ./bin/api
+GUARD_DATABASE_DSN='postgres://guard:password@127.0.0.1:5432/guard?sslmode=disable' ./bin/worker
 ```
+
+Apply migrations locally with `GUARD_DATABASE_DSN='postgres://guard:password@127.0.0.1:5432/guard?sslmode=disable' ./bin/migrate up`.
 
 PostgreSQL integration checks are opt-in:
 

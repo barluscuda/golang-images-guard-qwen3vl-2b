@@ -2,22 +2,21 @@ package main
 
 import (
 	"context"
-	"errors"
 	"flag"
 	"fmt"
-	"net/http"
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
 	"time"
 
-	httpapi "github.com/barluscuda/golang-images-guard-qwen3vl-2b/internal/adapter/http"
+	modelapi "github.com/barluscuda/golang-images-guard-qwen3vl-2b/internal/adapter/llamacpp"
 	"github.com/barluscuda/golang-images-guard-qwen3vl-2b/internal/adapter/postgres"
 	"github.com/barluscuda/golang-images-guard-qwen3vl-2b/internal/adapter/storage"
+	workeradapter "github.com/barluscuda/golang-images-guard-qwen3vl-2b/internal/adapter/worker"
 	"github.com/barluscuda/golang-images-guard-qwen3vl-2b/internal/config"
 	"github.com/barluscuda/golang-images-guard-qwen3vl-2b/internal/repository"
 	"github.com/barluscuda/golang-images-guard-qwen3vl-2b/internal/service"
-	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
 )
 
@@ -25,7 +24,7 @@ func main() {
 	path := flag.String("config", "config/config.yaml", "configuration file")
 	flag.Parse()
 	if err := run(*path); err != nil {
-		fmt.Fprintln(os.Stderr, "guard-api:", err)
+		fmt.Fprintln(os.Stderr, "guard-worker:", err)
 		os.Exit(1)
 	}
 }
@@ -59,40 +58,48 @@ func run(path string) error {
 		return fmt.Errorf("open storage: %w", err)
 	}
 	defer store.Close()
-	guard := service.NewGuard(repo, store, nil, policy, cfg.Model.Name, service.Options{
+	model := modelapi.New(modelapi.Options{BaseURL: cfg.Model.BaseURL, Timeout: cfg.Model.Timeout,
+		MaxTokens: cfg.Model.MaxTokens, MaxResponseBytes: cfg.Model.MaxResponseBytes,
+		Temperature: cfg.Model.Temperature, TopP: cfg.Model.TopP, Concurrency: cfg.Worker.Concurrency})
+	defer model.Close()
+	guard := service.NewGuard(repo, store, model, policy, cfg.Model.Name, service.Options{
 		Lease: cfg.Worker.LeaseDuration, Timeout: cfg.Model.Timeout,
 		RetryDelay: cfg.Worker.RetryDelay, MaxAttempts: cfg.Worker.MaxAttempts,
 	})
+	background := workeradapter.New(guard, log, cfg.Worker.Concurrency, cfg.Worker.PollInterval)
 
-	gin.SetMode(gin.ReleaseMode)
-	handler := httpapi.NewHandler(guard, httpapi.UploadLimits{MaxBytes: cfg.Upload.MaxBytes,
-		MaxLongSide: cfg.Upload.MaxLongSide, MaxShortSide: cfg.Upload.MaxShortSide, MaxConcurrent: cfg.Upload.MaxConcurrent})
-	router, err := httpapi.NewRouter(handler, log, db.Ping)
-	if err != nil {
-		return err
-	}
-	server := &http.Server{Addr: cfg.Server.Address, Handler: router, ReadHeaderTimeout: 5 * time.Second,
-		ReadTimeout: cfg.Server.ReadTimeout, WriteTimeout: cfg.Server.WriteTimeout, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 16 << 10}
 	signalCtx, stopSignals := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stopSignals()
-	serverErrors := make(chan error, 1)
-	go func() { serverErrors <- server.ListenAndServe() }()
-	log.Info("guard API started", zap.String("address", cfg.Server.Address), zap.String("model", cfg.Model.Name),
-		zap.String("policy_hash", policy.Hash()))
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		background.Run(signalCtx)
+	}()
+	go func() {
+		defer wg.Done()
+		reconcileOrphans(signalCtx, store, repo, log)
+	}()
+	log.Info("guard worker started", zap.String("model", cfg.Model.Name), zap.Int("workers", cfg.Worker.Concurrency))
+	<-signalCtx.Done()
+	wg.Wait()
+	return nil
+}
 
-	var serveErr error
-	select {
-	case <-signalCtx.Done():
-	case serveErr = <-serverErrors:
+func reconcileOrphans(ctx context.Context, store *storage.Local, repo *repository.Image, log *zap.Logger) {
+	for ctx.Err() == nil {
+		pruneCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+		err := store.PruneOrphans(pruneCtx, time.Now().Add(-time.Hour), repo.ExistsStorageKey)
+		cancel()
+		if err != nil && ctx.Err() == nil {
+			log.Warn("orphan reconciliation failed", zap.Error(err))
+		}
+		timer := time.NewTimer(time.Hour)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return
+		case <-timer.C:
+		}
 	}
-	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), cfg.Server.ShutdownTimeout)
-	defer shutdownCancel()
-	shutdownErr := server.Shutdown(shutdownCtx)
-	if shutdownErr != nil {
-		_ = server.Close()
-	}
-	if serveErr != nil && !errors.Is(serveErr, http.ErrServerClosed) {
-		return serveErr
-	}
-	return shutdownErr
 }

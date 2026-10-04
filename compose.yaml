@@ -15,19 +15,17 @@ services:
     restart: unless-stopped
 
   migrate:
-    image: migrate/migrate:v4.19.1
+    build: .
     profiles: ["tools"]
-    volumes:
-      - ./migrations:/migrations:ro
     environment:
       GUARD_DATABASE_DSN: ${GUARD_DATABASE_DSN:?Set GUARD_DATABASE_DSN in .env}
-    entrypoint: ["/bin/sh", "-c"]
-    command: ['exec migrate -path=/migrations -database="$$GUARD_DATABASE_DSN" up']
+    entrypoint: ["/app/migrate"]
+    command: ["up"]
     depends_on:
       postgres:
         condition: service_healthy
 
-  guard:
+  api:
     build: .
     environment:
       GUARD_DATABASE_DSN: ${GUARD_DATABASE_DSN:?Set GUARD_DATABASE_DSN in .env}
@@ -35,6 +33,24 @@ services:
       GUARD_MODEL_BASE_URL: ${GUARD_MODEL_BASE_URL:-http://host.docker.internal:8000/v1}
     ports:
       - "127.0.0.1:8080:8080"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - image_data:/data/images
+      - ./config:/app/config:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+    stop_grace_period: 25s
+
+  worker:
+    build: .
+    entrypoint: ["/app/worker"]
+    environment:
+      GUARD_DATABASE_DSN: ${GUARD_DATABASE_DSN:?Set GUARD_DATABASE_DSN in .env}
+      GUARD_STORAGE_DIRECTORY: /data/images
+      GUARD_MODEL_BASE_URL: ${GUARD_MODEL_BASE_URL:-http://host.docker.internal:8000/v1}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:
