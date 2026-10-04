@@ -35,6 +35,7 @@ func NewRouter(handler *Handler, log *zap.Logger, ready func(context.Context) er
 		c.Next()
 	})
 	r.POST("/v1/images", handler.Upload)
+	r.GET("/v1/images/:image_id/file", handler.GetFile)
 	r.GET("/v1/images/:image_id", handler.Get)
 	r.DELETE("/v1/images/:image_id", handler.Delete)
 	r.GET("/health/live", func(c *gin.Context) { c.JSON(http.StatusOK, gin.H{"status": "ok"}) })

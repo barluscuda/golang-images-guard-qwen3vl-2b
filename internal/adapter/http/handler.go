@@ -134,6 +134,28 @@ func (h *Handler) Get(c *gin.Context) {
 		Width: image.Width, Height: image.Height, Result: result, Error: failure, CreatedAt: image.CreatedAt, UpdatedAt: image.UpdatedAt})
 }
 
+func (h *Handler) GetFile(c *gin.Context) {
+	id := c.Param("image_id")
+	if !domain.ValidID(id) {
+		respondError(c, http.StatusBadRequest, "invalid_id", "Image ID must be a lowercase UUID.")
+		return
+	}
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 10*time.Second)
+	defer cancel()
+	data, err := h.service.GetImageFile(ctx, id)
+	if errors.Is(err, domain.ErrNotFound) {
+		respondError(c, http.StatusNotFound, "not_found", "Image not found.")
+		return
+	}
+	if err != nil {
+		respondError(c, http.StatusServiceUnavailable, "image_unavailable", "Image file is unavailable.")
+		return
+	}
+	c.Header("Cache-Control", "no-store")
+	c.Header("Content-Disposition", `attachment; filename="`+id+`.webp"`)
+	c.Data(http.StatusOK, "image/webp", data)
+}
+
 func (h *Handler) Delete(c *gin.Context) {
 	id := c.Param("image_id")
 	if !domain.ValidID(id) {

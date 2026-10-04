@@ -67,6 +67,14 @@ Poll image info:
 curl http://127.0.0.1:8080/v1/images/c8915c6e-d613-4943-9089-7ec4331d42df
 ```
 
+Download the stored WebP for an image ID:
+
+```sh
+curl -OJ http://127.0.0.1:8080/v1/images/c8915c6e-d613-4943-9089-7ec4331d42df/file
+```
+
+The response is `image/webp` with a download filename derived from the image ID. It returns **404 Not Found** for an unknown ID and **503 Service Unavailable** if the image file or database cannot be read. The server's filesystem path is never returned.
+
 Delete a completed image and its stored file:
 
 ```sh
@@ -153,7 +161,7 @@ The domain has no infrastructure dependencies. `cmd/api` owns the HTTP server, `
 
 PostgreSQL is the durable work queue. Workers use `FOR UPDATE SKIP LOCKED` in a short transaction, then release the transaction before inference. Claim tokens fence result writes, and expired leases allow recovery after crashes. Failures retry up to three attempts with increasing delays; exhausted jobs become `failed`. Database completion failures leave the lease available for recovery.
 
-Files are written through a temporary file, synced, and atomically renamed before creating the pending row. If database creation fails, file deletion occurs only after confirming no row exists. Startup and hourly reconciliation remove unreferenced files older than one hour. Completed images can be removed through the DELETE endpoint; this version has no image-download endpoint.
+Files are written through a temporary file, synced, and atomically renamed before creating the pending row. If database creation fails, file deletion occurs only after confirming no row exists. Startup and hourly reconciliation remove unreferenced files older than one hour. Images can be downloaded by ID and completed images can be removed through the DELETE endpoint.
 
 SQL migrations under `migrations/` are applied by `cmd/migrate`. Startup requires clean schema version 1 and performs no schema changes.
 

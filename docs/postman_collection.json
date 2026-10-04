@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "Images Guard API",
-    "description": "Requests for the Images Guard API. Set base_url to the API address. For Upload Image, attach one static WebP file in the image form-data field. Copy the returned image_id into the image_id collection variable to poll or delete that image. Upload limits default to 5 MiB, 1920 px on the long side, and 1080 px on the short side; server configuration may lower or raise the byte limit up to 64 MiB.",
+    "description": "Requests for the Images Guard API. Set base_url to the API address. For Upload Image, attach one static WebP file in the image form-data field. Copy the returned image_id into the image_id collection variable to poll, download, or delete that image. Upload limits default to 5 MiB, 1920 px on the long side, and 1080 px on the short side; server configuration may lower or raise the byte limit up to 64 MiB.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
@@ -64,6 +64,27 @@
                 "v1",
                 "images",
                 "{{image_id}}"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Download Image",
+          "description": "Downloads the stored WebP for an image ID with Content-Type image/webp. The server returns a filename derived from the ID, not its filesystem path. Error codes: invalid_id (400), not_found (404), image_unavailable (503).",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/v1/images/{{image_id}}/file",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "v1",
+                "images",
+                "{{image_id}}",
+                "file"
               ]
             }
           },

@@ -61,6 +61,15 @@ func (s *Guard) Get(ctx context.Context, id string) (domain.ImageRecord, error) 
 	return s.repo.Get(ctx, id)
 }
 
+// GetImageFile returns the stored image bytes for a persisted image ID.
+func (s *Guard) GetImageFile(ctx context.Context, id string) ([]byte, error) {
+	image, err := s.repo.Get(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	return s.storage.Read(ctx, image.StorageKey)
+}
+
 func (s *Guard) Delete(ctx context.Context, id string) error {
 	key, err := s.repo.DeleteCompleted(ctx, id)
 	if err != nil {
